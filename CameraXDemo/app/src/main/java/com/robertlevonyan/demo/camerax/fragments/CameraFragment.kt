@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.content.res.Configuration
 import android.hardware.display.DisplayManager
+import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.HandlerThread
@@ -12,6 +13,8 @@ import android.view.GestureDetector
 import android.view.View
 import android.widget.Toast
 import androidx.camera.core.*
+import androidx.camera.core.impl.ImageCaptureConfig
+import androidx.camera.core.impl.PreviewConfig
 import androidx.camera.extensions.HdrImageCaptureExtender
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.Navigation
@@ -26,14 +29,17 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.File
+import java.text.SimpleDateFormat
+import java.util.*
 import kotlin.properties.Delegates
 
 class CameraFragment : BaseFragment<FragmentCameraBinding>(R.layout.fragment_camera) {
     companion object {
-        private const val TAG = "CameraXDemo"
         const val KEY_FLASH = "sPrefFlashCamera"
         const val KEY_GRID = "sPrefGridCamera"
         const val KEY_HDR = "sPrefHDR"
+
+        private val TAG = CameraFragment::class.java.simpleName
     }
 
     private lateinit var displayManager: DisplayManager
@@ -43,16 +49,9 @@ class CameraFragment : BaseFragment<FragmentCameraBinding>(R.layout.fragment_cam
     private lateinit var imageAnalyzer: ImageAnalysis
 
     private var displayId = -1
-    private var lensFacing = CameraX.LensFacing.BACK
-    private var flashMode by Delegates.observable(FlashMode.OFF.ordinal) { _, _, new ->
-        binding.buttonFlash.setImageResource(
-            when (new) {
-                FlashMode.ON.ordinal -> R.drawable.ic_flash_on
-                FlashMode.AUTO.ordinal -> R.drawable.ic_flash_auto
-                else -> R.drawable.ic_flash_off
-            }
-        )
-    }
+    private var lensFacing = CameraSelector.LENS_FACING_BACK
+    private var flashMode = ImageCapture.FLASH_MODE_OFF
+
     private var hasGrid = false
     private var hasHdr = false
     private var selectedTimer = CameraTimer.OFF
@@ -67,7 +66,7 @@ class CameraFragment : BaseFragment<FragmentCameraBinding>(R.layout.fragment_cam
         override fun onDisplayRemoved(displayId: Int) = Unit
         override fun onDisplayChanged(displayId: Int) = view?.let { view ->
             if (displayId == this@CameraFragment.displayId) {
-                preview.setTargetRotation(view.display.rotation)
+                // TODO: maybe need to re-create preview? preview.targetRotation
                 imageCapture.setTargetRotation(view.display.rotation)
                 imageAnalyzer.setTargetRotation(view.display.rotation)
             }
@@ -78,7 +77,7 @@ class CameraFragment : BaseFragment<FragmentCameraBinding>(R.layout.fragment_cam
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         prefs = SharedPrefsManager.newInstance(requireContext())
-        flashMode = prefs.getInt(KEY_FLASH, FlashMode.OFF.ordinal)
+        flashMode = prefs.getInt(KEY_FLASH, ImageCapture.FLASH_MODE_OFF)
         hasGrid = prefs.getBoolean(KEY_GRID, false)
         hasHdr = prefs.getBoolean(KEY_HDR, false)
         initViews()
@@ -140,10 +139,10 @@ class CameraFragment : BaseFragment<FragmentCameraBinding>(R.layout.fragment_cam
      * */
     @SuppressLint("RestrictedApi")
     fun toggleCamera() = binding.buttonSwitchCamera.toggleButton(
-        lensFacing == CameraX.LensFacing.BACK, 180f,
+        lensFacing == CameraSelector.LENS_FACING_BACK, 180f,
         R.drawable.ic_outline_camera_rear, R.drawable.ic_outline_camera_front
     ) {
-        lensFacing = if (it) CameraX.LensFacing.BACK else CameraX.LensFacing.FRONT
+        lensFacing = if (it) CameraSelector.LENS_FACING_BACK else CameraSelector.LENS_FACING_FRONT
 
         CameraX.getCameraWithLensFacing(lensFacing)
         recreateCamera()
@@ -207,14 +206,9 @@ class CameraFragment : BaseFragment<FragmentCameraBinding>(R.layout.fragment_cam
      *  possible values are ON, OFF or AUTO
      *  circularClose() function is an Extension function which is adding circular close
      * */
-    fun closeFlashAndSelect(flash: FlashMode) =
+    fun closeFlashAndSelect(flash: Int) =
         binding.layoutFlashOptions.circularClose(binding.buttonFlash) {
-            flashMode = when (flash) {
-                FlashMode.ON -> FlashMode.ON.ordinal
-                FlashMode.AUTO -> FlashMode.AUTO.ordinal
-                else -> FlashMode.OFF.ordinal
-            }
-            prefs.putInt(KEY_FLASH, flashMode)
+            prefs.putInt(KEY_FLASH, flash)
             imageCapture.flashMode = getFlashMode()
         }
 
@@ -269,6 +263,16 @@ class CameraFragment : BaseFragment<FragmentCameraBinding>(R.layout.fragment_cam
         }
     }
 
+    private val cameraSelector: CameraSelector
+    get() {
+        if (lensFacing == CameraSelector.LENS_FACING_FRONT) {
+            return CameraSelector.DEFAULT_FRONT_CAMERA
+        } else {
+            return CameraSelector.DEFAULT_BACK_CAMERA
+        }
+    }
+
+
     private fun startCamera() {
         // This is the Texture View where the camera will be rendered
         val viewFinder = binding.viewFinder
@@ -277,9 +281,9 @@ class CameraFragment : BaseFragment<FragmentCameraBinding>(R.layout.fragment_cam
         val ratio = AspectRatio.RATIO_4_3
 
         // The Configuration of how we want to preview the camera
-        val previewConfig = PreviewConfig.Builder().apply {
+        val previewConfig = Preview.Builder().apply {
             setTargetAspectRatio(ratio) // setting the aspect ration
-            setLensFacing(lensFacing) // setting the lens facing (front or back)
+            lensFacing = lensFacing // setting the lens facing (front or back)
             setTargetRotation(viewFinder.display.rotation) // setting the rotation of the camera
         }.build()
 
@@ -287,21 +291,21 @@ class CameraFragment : BaseFragment<FragmentCameraBinding>(R.layout.fragment_cam
         preview = AutoFitPreviewBuilder.build(previewConfig, viewFinder)
 
         // The Configuration of how we want to capture the image
-        val imageCaptureConfig = ImageCaptureConfig.Builder().apply {
+        val imageCaptureConfig = ImageCapture.Builder().apply {
             setTargetAspectRatio(ratio) // setting the aspect ration
-            setLensFacing(lensFacing) // setting the lens facing (front or back)
-            setCaptureMode(ImageCapture.CaptureMode.MAX_QUALITY) // setting to have pictures with highest quality possible
+            lensFacing = lensFacing // setting the lens facing (front or back)
+            setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY) // setting to have pictures with highest quality possible
             setTargetRotation(viewFinder.display.rotation) // setting the rotation of the camera
             setFlashMode(getFlashMode()) // setting the flash
         }
 
-        imageCapture = ImageCapture(imageCaptureConfig.build())
+        imageCapture = imageCaptureConfig.build()
         binding.imageCapture = imageCapture
 
         // Create a Vendor Extension for HDR
         val hdrImageCapture = HdrImageCaptureExtender.create(imageCaptureConfig)
         // Check if the extension is available on the device
-        if (!hdrImageCapture.isExtensionAvailable) {
+        if (!hdrImageCapture.isExtensionAvailable(CameraSelector.DEFAULT_FRONT_CAMERA)) {
             // If not, hide the HDR button
             binding.buttonHdr.visibility = View.GONE
         } else if (hasHdr) {
@@ -310,32 +314,23 @@ class CameraFragment : BaseFragment<FragmentCameraBinding>(R.layout.fragment_cam
         }
 
         // The Configuration for image analyzing
-        val analyzerConfig = ImageAnalysisConfig.Builder().apply {
+        val analyzerConfig = ImageAnalysis.Builder().apply {
             // In our analysis, we care more about the latest image than
             // analyzing *every* image
-            setImageReaderMode(ImageAnalysis.ImageReaderMode.ACQUIRE_LATEST_IMAGE)
+            setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
         }.build()
 
         // Create an Image Analyzer Use Case instance for luminosity analysis
-        val analyzerUseCase = ImageAnalysis(analyzerConfig).apply {
+        val analyzerUseCase = analyzerConfig.apply {
             // Use a worker thread for image analysis to prevent glitches
             val analyzerThread = HandlerThread("LuminosityAnalysis").apply { start() }
             setAnalyzer(ThreadExecutor(Handler(analyzerThread.looper)), LuminosityAnalyzer())
         }
 
-        // Check for lens facing to add or not the Image Analyzer Use Case
-        if (lensFacing == CameraX.LensFacing.BACK) {
-            CameraX.bindToLifecycle(viewLifecycleOwner, preview, imageCapture, analyzerUseCase)
-        } else {
-            CameraX.bindToLifecycle(viewLifecycleOwner, preview, imageCapture)
-        }
+        CameraX.bindToLifecycle(viewLifecycleOwner, cameraSelector, imageCapture, analyzerUseCase)
     }
 
-    private fun getFlashMode() = when (flashMode) {
-        FlashMode.ON.ordinal -> FlashMode.ON
-        FlashMode.AUTO.ordinal -> FlashMode.AUTO
-        else -> FlashMode.OFF
-    }
+    private fun getFlashMode() = flashMode
 
     @Suppress("NON_EXHAUSTIVE_WHEN")
     fun takePicture(imageCapture: ImageCapture) = lifecycleScope.launch(Dispatchers.Main) {
@@ -354,31 +349,43 @@ class CameraFragment : BaseFragment<FragmentCameraBinding>(R.layout.fragment_cam
         captureImage(imageCapture)
     }
 
+    /** Helper function used to create a timestamped file */
+    private fun createFile(baseFolder: File, format: String, extension: String) =
+        File(baseFolder, SimpleDateFormat(format, Locale.US)
+            .format(System.currentTimeMillis()) + extension)
+
     private fun captureImage(imageCapture: ImageCapture) {
-        // Create the output file
-        val imageFile = File(outputDirectory, "${System.currentTimeMillis()}.jpg")
+        // Create output file to hold the image
+        val imageFile = createFile(outputDirectory, "${System.currentTimeMillis()}", "jpg")
+
+        // Setup image capture metadata
+        val metadata = ImageCapture.Metadata().apply {
+
+            // Mirror image when using the front camera
+            isReversedHorizontal = lensFacing == CameraSelector.LENS_FACING_FRONT
+        }
+
+        // Create output options object which contains file + metadata
+        val outputOptions = ImageCapture.OutputFileOptions.Builder(imageFile)
+            .setMetadata(metadata)
+            .build()
         // Capture the image, first parameter is the file where the image should be stored, the second parameter is the callback after taking a photo
         imageCapture.takePicture(
-            imageFile,
+            outputOptions,
             requireContext().mainExecutor(),
-            object : ImageCapture.OnImageSavedListener {
-                override fun onImageSaved(file: File) { // the resulting file of taken photo
+            object : ImageCapture.OnImageSavedCallback {
+                override fun onImageSaved(output: ImageCapture.OutputFileResults) { // the resulting file of taken photo
+                    val savedUri = output.savedUri ?: Uri.fromFile(imageFile)
+                    Log.d(TAG, "Photo capture succeeded: $savedUri")
                     // Create small preview
-                    setGalleryThumbnail(file)
-                    val msg = "Photo saved in ${file.absolutePath}"
-                    Log.d("CameraXDemo", msg)
+                    setGalleryThumbnail(imageFile)
                 }
 
-                override fun onError(
-                    imageCaptureError: ImageCapture.ImageCaptureError,
-                    message: String,
-                    cause: Throwable?
-                ) {
+                override fun onError(exc: ImageCaptureException) {
                     // This function is called if there is some error during capture process
-                    val msg = "Photo capture failed: $message"
+                    val msg = "Photo capture failed: ${exc.message}"
                     Toast.makeText(requireContext(), msg, Toast.LENGTH_SHORT).show()
-                    Log.e("CameraXApp", msg)
-                    cause?.printStackTrace()
+                    Log.e(TAG, msg, exc)
                 }
             })
     }

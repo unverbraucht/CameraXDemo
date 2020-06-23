@@ -11,6 +11,7 @@ import android.view.GestureDetector
 import android.view.View
 import android.widget.Toast
 import androidx.camera.core.*
+import androidx.camera.core.impl.VideoCaptureConfig
 import androidx.core.animation.doOnCancel
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.Navigation
@@ -37,15 +38,8 @@ class VideoFragment : BaseFragment<FragmentVideoBinding>(R.layout.fragment_video
     private lateinit var videoCapture: VideoCapture
 
     private var displayId = -1
-    private var lensFacing = CameraX.LensFacing.BACK
-    private var flashMode by Delegates.observable(FlashMode.OFF.ordinal) { _, _, new ->
-        binding.buttonFlash.setImageResource(
-            when (new) {
-                FlashMode.ON.ordinal -> R.drawable.ic_flash_on
-                else -> R.drawable.ic_flash_off
-            }
-        )
-    }
+    private var lensFacing = CameraSelector.LENS_FACING_BACK
+    private var flashMode = ImageCapture.FLASH_MODE_OFF
     private var hasGrid = false
     private var isTorchOn = false
     private var isRecording = false
@@ -137,10 +131,10 @@ class VideoFragment : BaseFragment<FragmentVideoBinding>(R.layout.fragment_video
      *  toggleButton() function is an Extension function made to animate button rotation
      * */
     fun toggleCamera() = binding.buttonSwitchCamera.toggleButton(
-        lensFacing == CameraX.LensFacing.BACK, 180f,
+        lensFacing == CameraSelector.LENS_FACING_BACK, 180f,
         R.drawable.ic_outline_camera_rear, R.drawable.ic_outline_camera_front
     ) {
-        lensFacing = if (it) CameraX.LensFacing.BACK else CameraX.LensFacing.FRONT
+        lensFacing = if (it) CameraSelector.LENS_FACING_BACK else CameraSelector.LENS_FACING_FRONT
 
         CameraX.getCameraWithLensFacing(lensFacing)
         recreateCamera()
@@ -154,7 +148,17 @@ class VideoFragment : BaseFragment<FragmentVideoBinding>(R.layout.fragment_video
         startCamera()
     }
 
+    private val cameraSelector: CameraSelector
+        get() {
+            if (lensFacing == CameraSelector.LENS_FACING_FRONT) {
+                return CameraSelector.DEFAULT_FRONT_CAMERA
+            } else {
+                return CameraSelector.DEFAULT_BACK_CAMERA
+            }
+        }
+
     private fun startCamera() {
+        Camera.g
         // This is the Texture View where the camera will be rendered
         val viewFinder = binding.viewFinder
 
@@ -162,29 +166,27 @@ class VideoFragment : BaseFragment<FragmentVideoBinding>(R.layout.fragment_video
         val ratio = AspectRatio.RATIO_16_9
 
         // The Configuration of how we want to preview the camera
-        val previewConfig = PreviewConfig.Builder().apply {
+        val previewConfig = Preview.Builder().apply {
             setTargetAspectRatio(ratio) // setting the aspect ration
-            setLensFacing(lensFacing) // setting the lens facing (front or back)
-            setTargetRotation(viewFinder.display.rotation)// setting the rotation of the camera
+            lensFacing = lensFacing // setting the lens facing (front or back)
+            setTargetRotation(viewFinder.display.rotation) // setting the rotation of the camera
         }.build()
 
         // Create an instance of Camera Preview
         preview = AutoFitPreviewBuilder.build(previewConfig, viewFinder)
 
         // The Configuration of how we want to capture the video
-        val videoCaptureConfig = VideoCaptureConfig.Builder().apply {
+        videoCapture = VideoCaptureConfig.Builder().apply {
             setTargetAspectRatio(ratio) // setting the aspect ration
-            setLensFacing(lensFacing) // setting the lens facing (front or back)
+            lensFacing = lensFacing
             setVideoFrameRate(24) // setting the frame rate to 24 fps
             setTargetRotation(viewFinder.display.rotation) // setting the rotation of the camera
         }.build()
 
-        videoCapture = VideoCapture(videoCaptureConfig)
-
         binding.fabRecordVideo.setOnClickListener { recordVideo(videoCapture) }
 
         // Add all the use cases to the CameraX
-        CameraX.bindToLifecycle(viewLifecycleOwner, preview, videoCapture)
+        CameraX.bindToLifecycle(viewLifecycleOwner, cameraSelector, videoCapture)
     }
 
     /**
@@ -252,14 +254,14 @@ class VideoFragment : BaseFragment<FragmentVideoBinding>(R.layout.fragment_video
      * */
     fun toggleFlash() {
         binding.buttonFlash.toggleButton(
-            flashMode == FlashMode.ON.ordinal,
+            flashMode == TorchState.ON,
             360f,
             R.drawable.ic_flash_off,
             R.drawable.ic_flash_on
         ) { flag ->
             isTorchOn = flag
-            flashMode = if (flag) FlashMode.ON.ordinal else FlashMode.OFF.ordinal
-            preview.enableTorch(flag)
+            flashMode = if (flag) TorchState.ON else TorchState.OFF
+            videoCapture.to
         }
     }
 

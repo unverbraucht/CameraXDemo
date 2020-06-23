@@ -14,10 +14,6 @@
             type="com.robertlevonyan.demo.camerax.enums.CameraTimer" />
 
         <variable
-            name="flash"
-            type="androidx.camera.core.FlashMode" />
-
-        <variable
             name="imageCapture"
             type="androidx.camera.core.ImageCapture" />
     </data>
@@ -294,7 +290,7 @@
                 android:layout_height="@dimen/button_size_small"
                 android:layout_weight="1"
                 android:background="@android:color/transparent"
-                android:onClick="@{()->fragment.closeFlashAndSelect(flash.OFF)}"
+                android:onClick="@{()->fragment.closeFlashAndSelect(imageCapture.FLASH_MODE_OFF)}"
                 android:src="@drawable/ic_flash_off"
                 tools:ignore="ContentDescription" />
 
@@ -304,7 +300,7 @@
                 android:layout_height="@dimen/button_size_small"
                 android:layout_weight="1"
                 android:background="@android:color/transparent"
-                android:onClick="@{()->fragment.closeFlashAndSelect(flash.AUTO)}"
+                android:onClick="@{()->fragment.closeFlashAndSelect(imageCapture.FLASH_MODE_AUTO)}"
                 android:src="@drawable/ic_flash_auto"
                 tools:ignore="ContentDescription"/>
 
@@ -314,7 +310,7 @@
                 android:layout_height="@dimen/button_size_small"
                 android:layout_weight="1"
                 android:background="@android:color/transparent"
-                android:onClick="@{()->fragment.closeFlashAndSelect(flash.ON)}"
+                android:onClick="@{()->fragment.closeFlashAndSelect(imageCapture.FLASH_MODE_ON)}"
                 android:src="@drawable/ic_flash_on"
                 tools:ignore="ContentDescription"/>
 
